@@ -50,6 +50,18 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+  otp: {
+    type: String,
+    select: false
+  },
+  otpExpires: {
+    type: Date,
+    select: false
+  },
   lastLogin: {
     type: Date
   },
@@ -72,6 +84,8 @@ const userSchema = new mongoose.Schema({
       delete ret.refreshTokens;
       delete ret.resetPasswordToken;
       delete ret.resetPasswordExpire;
+      delete ret.otp;
+      delete ret.otpExpires;
       return ret;
     }
   }
@@ -95,6 +109,19 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 // Generate and hash password token
 userSchema.methods.getResetPasswordToken = function() {
   // Implementation for password reset token generation
+};
+
+// Generate a 6-digit OTP and set its expiry
+userSchema.methods.generateOtp = function() {
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  this.otp = otp;
+  this.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+  return otp;
+};
+
+// Check whether a submitted OTP matches and hasn't expired
+userSchema.methods.matchOtp = function(submittedOtp) {
+  return !!this.otp && this.otp === submittedOtp && this.otpExpires && this.otpExpires > new Date();
 };
 
 // Check if user has enough storage

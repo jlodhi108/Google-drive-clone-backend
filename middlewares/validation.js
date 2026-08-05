@@ -33,6 +33,17 @@ const validateLogin = [
   handleValidation
 ];
 
+const validateVerifyOtp = [
+  body('email').isEmail().withMessage('a valid email is required').normalizeEmail(),
+  body('otp').isLength({ min: 6, max: 6 }).isNumeric().withMessage('otp must be a 6-digit code'),
+  handleValidation
+];
+
+const validateResendOtp = [
+  body('email').isEmail().withMessage('a valid email is required').normalizeEmail(),
+  handleValidation
+];
+
 const validateFileUpdate = [
   body('name').optional().trim().notEmpty().withMessage('name cannot be empty'),
   handleValidation
@@ -65,6 +76,8 @@ module.exports = {
   validateActivityQuery,
   validateRegistration,
   validateLogin,
+  validateVerifyOtp,
+  validateResendOtp,
   validateFileUpdate,
   validateFolderCreation,
   validateFolderUpdate,

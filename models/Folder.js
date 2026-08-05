@@ -35,6 +35,10 @@ const folderSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  starred: {
+    type: Boolean,
+    default: false
+  },
   sharedWith: [{
     user: {
       type: mongoose.Schema.Types.ObjectId,

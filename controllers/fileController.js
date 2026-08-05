@@ -51,7 +51,7 @@ exports.uploadFile = [
 exports.getUserFiles = async (req, res) => {
   try {
     const { folderId } = req.query;
-    const query = { owner: req.user._id };
+    const query = { owner: req.user._id, isDeleted: false };
     if (folderId) {
       query.folder = folderId;
     }
@@ -89,8 +89,40 @@ exports.updateFile = async (req, res) => {
     res.status(500).json({ message: 'Error updating file', error: error.message });
   }
 };
-// Delete a file
+// Delete a file (soft delete — moves it to trash)
 exports.deleteFile = async (req, res) => {
+  try {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id, isDeleted: false });
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    file.isDeleted = true;
+    file.deletedAt = Date.now();
+    await file.save();
+    await createActivity(req.user._id, 'trash', file._id, 'File');
+    res.json({ message: 'File moved to trash' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting file', error: error.message });
+  }
+};
+// Restore a file from trash
+exports.restoreFile = async (req, res) => {
+  try {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id, isDeleted: true });
+    if (!file) {
+      return res.status(404).json({ message: 'File not found in trash' });
+    }
+    file.isDeleted = false;
+    file.deletedAt = undefined;
+    await file.save();
+    await createActivity(req.user._id, 'restore', file._id, 'File');
+    res.json({ message: 'File restored successfully', file });
+  } catch (error) {
+    res.status(500).json({ message: 'Error restoring file', error: error.message });
+  }
+};
+// Permanently delete a file (only reachable from trash)
+exports.permanentlyDeleteFile = async (req, res) => {
   try {
     const file = await File.findOne({ _id: req.params.id, owner: req.user._id });
     if (!file) {
@@ -99,9 +131,66 @@ exports.deleteFile = async (req, res) => {
     await s3Service.deleteFile(file.path).catch(() => {});
     await File.deleteOne({ _id: file._id });
     await createActivity(req.user._id, 'delete', file._id, 'File');
-    res.json({ message: 'File deleted successfully' });
+    res.json({ message: 'File permanently deleted' });
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting file', error: error.message });
+    res.status(500).json({ message: 'Error permanently deleting file', error: error.message });
+  }
+};
+// Toggle star on a file
+exports.toggleStarFile = async (req, res) => {
+  try {
+    const file = await File.findOne({ _id: req.params.id, owner: req.user._id, isDeleted: false });
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    file.starred = !file.starred;
+    await file.save();
+    await createActivity(req.user._id, file.starred ? 'star' : 'unstar', file._id, 'File');
+    res.json({ message: 'File updated successfully', file });
+  } catch (error) {
+    res.status(500).json({ message: 'Error starring file', error: error.message });
+  }
+};
+// Get trashed files for a user
+exports.getTrashedFiles = async (req, res) => {
+  try {
+    const files = await File.find({ owner: req.user._id, isDeleted: true }).sort({ deletedAt: -1 });
+    res.json(files);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching trashed files', error: error.message });
+  }
+};
+// Get starred files for a user
+exports.getStarredFiles = async (req, res) => {
+  try {
+    const files = await File.find({ owner: req.user._id, isDeleted: false, starred: true }).sort({ updatedAt: -1 });
+    res.json(files);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching starred files', error: error.message });
+  }
+};
+// Get recently modified files for a user
+exports.getRecentFiles = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const files = await File.find({ owner: req.user._id, isDeleted: false })
+      .sort({ updatedAt: -1 })
+      .limit(limit);
+    res.json(files);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching recent files', error: error.message });
+  }
+};
+// Get total storage used by a user's non-deleted files
+exports.getStorageUsage = async (req, res) => {
+  try {
+    const [result] = await File.aggregate([
+      { $match: { owner: req.user._id, isDeleted: false } },
+      { $group: { _id: null, usedBytes: { $sum: '$size' }, fileCount: { $sum: 1 } } }
+    ]);
+    res.json({ usedBytes: result?.usedBytes || 0, fileCount: result?.fileCount || 0 });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching storage usage', error: error.message });
   }
 };
 // Search files
@@ -113,6 +202,7 @@ exports.searchFiles = async (req, res) => {
     }
     const files = await File.find({
       owner: req.user._id,
+      isDeleted: false,
       name: { $regex: query, $options: 'i' }
     }).sort({ createdAt: -1 });
     res.json(files);

@@ -11,7 +11,7 @@ const activitySchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['upload', 'download', 'delete', 'rename', 'move', 'share', 'unshare', 'create_folder', 'delete_folder']
+    enum: ['upload', 'download', 'delete', 'rename', 'move', 'share', 'unshare', 'create_folder', 'delete_folder', 'trash', 'restore', 'star', 'unstar']
   },
   target: {
     type: mongoose.Schema.Types.ObjectId,

@@ -42,6 +42,10 @@ const fileSchema = new mongoose.Schema({
   publicUrl: {
     type: String
   },
+  starred: {
+    type: Boolean,
+    default: false
+  },
   lastAccessed: {
     type: Date,
     default: Date.now

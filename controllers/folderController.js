@@ -2,6 +2,7 @@
 
 const Folder = require('../models/Folder');
 const File = require('../models/File');
+const s3Service = require('../services/s3Service');
 const { createActivity } = require('../services/activityService');
 
 // Create a new folder
@@ -42,7 +43,7 @@ exports.createFolder = async (req, res) => {
 exports.getUserFolders = async (req, res) => {
   try {
     const { parentId } = req.query;
-    const query = { owner: req.user._id };
+    const query = { owner: req.user._id, isDeleted: false };
     if (parentId) {
       query.parent = parentId;
     } else {
@@ -115,14 +116,79 @@ exports.updateFolder = async (req, res) => {
   }
 };
 
-// Delete a folder
+// Delete a folder (soft delete — moves it and its contents to trash)
 exports.deleteFolder = async (req, res) => {
+  try {
+    const folder = await Folder.findOne({ _id: req.params.id, owner: req.user._id, isDeleted: false });
+
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found' });
+    }
+
+    const deletedAt = Date.now();
+
+    // Trash all subfolders and files inside this folder
+    await Folder.updateMany(
+      { path: { $regex: `^${folder.path}/` } },
+      { $set: { isDeleted: true, deletedAt } }
+    );
+    await File.updateMany(
+      { path: { $regex: `^${folder.path}/` } },
+      { $set: { isDeleted: true, deletedAt } }
+    );
+
+    // Trash the folder itself
+    folder.isDeleted = true;
+    folder.deletedAt = deletedAt;
+    await folder.save();
+
+    await createActivity(req.user._id, 'trash', folder._id, 'Folder');
+
+    res.json({ message: 'Folder and its contents moved to trash' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting folder', error: error.message });
+  }
+};
+// Restore a folder (and its cascade-trashed contents) from trash
+exports.restoreFolder = async (req, res) => {
+  try {
+    const folder = await Folder.findOne({ _id: req.params.id, owner: req.user._id, isDeleted: true });
+
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found in trash' });
+    }
+
+    await Folder.updateMany(
+      { path: { $regex: `^${folder.path}/` } },
+      { $set: { isDeleted: false }, $unset: { deletedAt: '' } }
+    );
+    await File.updateMany(
+      { path: { $regex: `^${folder.path}/` } },
+      { $set: { isDeleted: false }, $unset: { deletedAt: '' } }
+    );
+
+    folder.isDeleted = false;
+    folder.deletedAt = undefined;
+    await folder.save();
+
+    await createActivity(req.user._id, 'restore', folder._id, 'Folder');
+
+    res.json({ message: 'Folder restored successfully', folder });
+  } catch (error) {
+    res.status(500).json({ message: 'Error restoring folder', error: error.message });
+  }
+};
+// Permanently delete a folder and everything inside it (only reachable from trash)
+exports.permanentlyDeleteFolder = async (req, res) => {
   try {
     const folder = await Folder.findOne({ _id: req.params.id, owner: req.user._id });
 
     if (!folder) {
       return res.status(404).json({ message: 'Folder not found' });
     }
+
+    const filesToDelete = await File.find({ path: { $regex: `^${folder.path}/` } });
+    await Promise.all(filesToDelete.map(f => s3Service.deleteFile(f.path).catch(() => {})));
 
     // Delete all subfolders
     await Folder.deleteMany({ path: { $regex: `^${folder.path}/` } });
@@ -135,9 +201,42 @@ exports.deleteFolder = async (req, res) => {
 
     await createActivity(req.user._id, 'delete_folder', folder._id, 'Folder');
 
-    res.json({ message: 'Folder and its contents deleted successfully' });
+    res.json({ message: 'Folder and its contents permanently deleted' });
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting folder', error: error.message });
+    res.status(500).json({ message: 'Error permanently deleting folder', error: error.message });
+  }
+};
+// Toggle star on a folder
+exports.toggleStarFolder = async (req, res) => {
+  try {
+    const folder = await Folder.findOne({ _id: req.params.id, owner: req.user._id, isDeleted: false });
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found' });
+    }
+    folder.starred = !folder.starred;
+    await folder.save();
+    await createActivity(req.user._id, folder.starred ? 'star' : 'unstar', folder._id, 'Folder');
+    res.json({ message: 'Folder updated successfully', folder });
+  } catch (error) {
+    res.status(500).json({ message: 'Error starring folder', error: error.message });
+  }
+};
+// Get trashed folders for a user
+exports.getTrashedFolders = async (req, res) => {
+  try {
+    const folders = await Folder.find({ owner: req.user._id, isDeleted: true }).sort({ deletedAt: -1 });
+    res.json(folders);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching trashed folders', error: error.message });
+  }
+};
+// Get starred folders for a user
+exports.getStarredFolders = async (req, res) => {
+  try {
+    const folders = await Folder.find({ owner: req.user._id, isDeleted: false, starred: true }).sort({ name: 1 });
+    res.json(folders);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching starred folders', error: error.message });
   }
 };
 
@@ -151,6 +250,7 @@ exports.searchFolders = async (req, res) => {
 
     const folders = await Folder.find({
       owner: req.user._id,
+      isDeleted: false,
       name: { $regex: query, $options: 'i' }
     }).sort({ name: 1 });
 
@@ -164,14 +264,14 @@ exports.searchFolders = async (req, res) => {
 exports.getFolderContents = async (req, res) => {
   try {
     const folderId = req.params.id;
-    const folder = await Folder.findOne({ _id: folderId, owner: req.user._id });
+    const folder = await Folder.findOne({ _id: folderId, owner: req.user._id, isDeleted: false });
 
     if (!folder) {
       return res.status(404).json({ message: 'Folder not found' });
     }
 
-    const subfolders = await Folder.find({ parent: folderId }).sort({ name: 1 });
-    const files = await File.find({ folder: folderId }).sort({ name: 1 });
+    const subfolders = await Folder.find({ parent: folderId, isDeleted: false }).sort({ name: 1 });
+    const files = await File.find({ folder: folderId, isDeleted: false }).sort({ name: 1 });
 
     res.json({
       folder,

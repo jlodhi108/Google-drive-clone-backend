@@ -9,7 +9,7 @@ module.exports = {
   refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET,
   refreshTokenExpiration: process.env.REFRESH_TOKEN_EXPIRATION || '7d',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
-  resendApiKey: process.env.RESEND_API_KEY,
-  fromEmail: process.env.FROM_EMAIL || 'onboarding@resend.dev',
+  sendgridApiKey: process.env.SENDGRID_API_KEY,
+  fromEmail: process.env.FROM_EMAIL,
   otpExpirationMinutes: 10
 };

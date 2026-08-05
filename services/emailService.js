@@ -2,18 +2,20 @@ const config = require('../config/config');
 
 const emailService = {
   sendOtpEmail: async (to, otp) => {
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${config.resendApiKey}`,
+        Authorization: `Bearer ${config.sendgridApiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: config.fromEmail,
-        to,
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: config.fromEmail },
         subject: 'Verify your email - Drive Clone',
-        text: `Your verification code is ${otp}. It expires in ${config.otpExpirationMinutes} minutes.`,
-        html: `<p>Your verification code is:</p><h2 style="letter-spacing:4px">${otp}</h2><p>This code expires in ${config.otpExpirationMinutes} minutes.</p>`
+        content: [
+          { type: 'text/plain', value: `Your verification code is ${otp}. It expires in ${config.otpExpirationMinutes} minutes.` },
+          { type: 'text/html', value: `<p>Your verification code is:</p><h2 style="letter-spacing:4px">${otp}</h2><p>This code expires in ${config.otpExpirationMinutes} minutes.</p>` }
+        ]
       })
     });
 

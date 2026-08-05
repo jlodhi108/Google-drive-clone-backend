@@ -44,6 +44,18 @@ const validateResendOtp = [
   handleValidation
 ];
 
+const validateForgotPassword = [
+  body('email').isEmail().withMessage('a valid email is required').normalizeEmail(),
+  handleValidation
+];
+
+const validateResetPassword = [
+  body('email').isEmail().withMessage('a valid email is required').normalizeEmail(),
+  body('otp').isLength({ min: 6, max: 6 }).isNumeric().withMessage('otp must be a 6-digit code'),
+  body('newPassword').isLength({ min: 8 }).withMessage('password must be at least 8 characters'),
+  handleValidation
+];
+
 const validateFileUpdate = [
   body('name').optional().trim().notEmpty().withMessage('name cannot be empty'),
   handleValidation
@@ -78,6 +90,8 @@ module.exports = {
   validateLogin,
   validateVerifyOtp,
   validateResendOtp,
+  validateForgotPassword,
+  validateResetPassword,
   validateFileUpdate,
   validateFolderCreation,
   validateFolderUpdate,

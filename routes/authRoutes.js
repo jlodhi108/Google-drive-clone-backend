@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { isAuthenticated, refreshToken } = require('../middlewares/auth');
-const { validateRegistration, validateLogin, validateVerifyOtp, validateResendOtp } = require('../middlewares/validation');
+const { validateRegistration, validateLogin, validateVerifyOtp, validateResendOtp, validateForgotPassword, validateResetPassword } = require('../middlewares/validation');
 const rateLimit = require('express-rate-limit');
 
 // Rate limiting
@@ -24,6 +24,8 @@ const otpLimiter = rateLimit({
 router.post('/register', validateRegistration, authController.register);
 router.post('/verify-otp', otpLimiter, validateVerifyOtp, authController.verifyOtp);
 router.post('/resend-otp', otpLimiter, validateResendOtp, authController.resendOtp);
+router.post('/forgot-password', otpLimiter, validateForgotPassword, authController.forgotPassword);
+router.post('/reset-password', otpLimiter, validateResetPassword, authController.resetPassword);
 router.post('/login', loginLimiter, validateLogin, authController.login);
 router.post('/logout', isAuthenticated, authController.logout);
 

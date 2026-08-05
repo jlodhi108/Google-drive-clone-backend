@@ -104,6 +104,47 @@ const authController = {
     }
   },
 
+  // Request a password reset code
+  forgotPassword: async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      const user = await User.findOne({ email });
+      if (user) {
+        const otp = user.generateOtp();
+        await user.save();
+        await emailService.sendPasswordResetEmail(user.email, otp);
+      }
+
+      res.json({ message: 'If that email is registered, a reset code has been sent.' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error requesting password reset', error: error.message });
+    }
+  },
+
+  // Reset password using the emailed code
+  resetPassword: async (req, res) => {
+    try {
+      const { email, otp, newPassword } = req.body;
+
+      const user = await User.findOne({ email }).select('+otp +otpExpires');
+      if (!user || !user.matchOtp(otp)) {
+        return res.status(400).json({ message: 'Invalid or expired reset code' });
+      }
+
+      user.password = newPassword;
+      user.otp = undefined;
+      user.otpExpires = undefined;
+      user.tokens = [];
+      user.refreshTokens = [];
+      await user.save();
+
+      res.json({ message: 'Password reset successful. Please log in with your new password.' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error resetting password', error: error.message });
+    }
+  },
+
   // Login with email and password
   login: async (req, res) => {
     try {

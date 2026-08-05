@@ -17,12 +17,18 @@ const authController = {
     try {
       const { name, email, password } = req.body;
 
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
+      let user = await User.findOne({ email });
+      if (user && user.isVerified) {
         return res.status(409).json({ message: 'Email is already registered' });
       }
 
-      const user = new User({ name, email, password });
+      if (!user) {
+        user = new User({ name, email, password });
+      } else {
+        // Unverified user retrying registration (e.g. the verification email never arrived)
+        user.name = name;
+        user.password = password;
+      }
       const otp = user.generateOtp();
       await user.save();
 
